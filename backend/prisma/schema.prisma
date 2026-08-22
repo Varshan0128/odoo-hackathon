@@ -1,0 +1,64 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String   @id @default(uuid())
+  employeeId       String   @unique
+  email            String   @unique
+  passwordHash     String
+  role             String   @default("employee")
+  isEmailVerified  Boolean  @default(false)
+  status           String   @default("active")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  profile          EmployeeProfile?
+  attendance       AttendanceRecord[]
+  leaveRequests    LeaveRequest[]
+}
+
+model EmployeeProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  fullName    String
+  phone       String?
+  address     String?
+  department  String?
+  designation String?
+
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model AttendanceRecord {
+  id            String    @id @default(uuid())
+  userId        String
+  date          DateTime
+  checkInTime   DateTime?
+  checkOutTime  DateTime?
+  status        String
+
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+}
+
+model LeaveRequest {
+  id               String    @id @default(uuid())
+  userId           String
+  leaveType        String
+  startDate        DateTime
+  endDate          DateTime
+  remarks          String?
+  status           String    @default("pending")
+  decisionComment  String?
+  createdAt        DateTime  @default(now())
+
+  user             User      @relation(fields: [userId], references: [id])
+}
