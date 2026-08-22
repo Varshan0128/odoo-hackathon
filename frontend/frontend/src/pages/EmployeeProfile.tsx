@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Mail, Phone, MapPin, Calendar, Pencil } from 'lucide-react'
-import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'

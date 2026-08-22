@@ -17,7 +17,13 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 export function RequireAdmin({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  if (user?.role !== 'admin') return <Navigate to="/dashboard" replace />
+  if (user?.role !== 'admin') return <Navigate to="/unauthorized" replace />
+  return <>{children}</>
+}
+
+export function RequireEmployee({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (user?.role !== 'employee') return <Navigate to="/unauthorized" replace />
   return <>{children}</>
 }
 

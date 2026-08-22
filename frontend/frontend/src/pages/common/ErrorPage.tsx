@@ -1,0 +1,1 @@
+export function ErrorPage() { return <main className="mx-auto max-w-lg p-10 text-center"><h1 className="text-3xl font-semibold">Something went wrong</h1><p className="mt-2 text-slate-500">Please refresh and try again.</p></main> }

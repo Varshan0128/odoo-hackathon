@@ -1,6 +1,20 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Users, CalendarCheck, CalendarClock, Clock3, UserPlus, ClipboardCheck, Wallet, CheckCircle2, XCircle } from 'lucide-react'
+import {
+  Users,
+  CalendarCheck,
+  CalendarClock,
+  Clock3,
+  UserPlus,
+  ClipboardCheck,
+  Wallet,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+  FileText,
+  BarChart3,
+  UserCog,
+} from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -32,6 +46,22 @@ const weeklyAttendance = [
   { day: 'Fri', present: 104, absent: 9, leave: 15 },
 ]
 
+// Muted, professional palette — no saturated green/purple. All from :root tokens.
+const CHART_COLORS = {
+  present: 'var(--color-primary-soft)',
+  leave: 'var(--color-ink-faint)',
+  absent: 'var(--color-danger)',
+}
+
+function activityVisual(message: string) {
+  const m = message.toLowerCase()
+  if (m.includes('sick')) return { icon: FileText, tone: 'var(--color-info)', bg: 'var(--color-info-soft)' }
+  if (m.includes('paid leave')) return { icon: Wallet, tone: 'var(--color-warning)', bg: 'var(--color-warning-soft)' }
+  if (m.includes('approved')) return { icon: CheckCircle2, tone: 'var(--color-success)', bg: 'var(--color-success-soft)' }
+  if (m.includes('checked in')) return { icon: Clock3, tone: 'var(--color-ink-muted)', bg: 'var(--color-surface-sunken)' }
+  return { icon: UserCog, tone: 'var(--color-ink-muted)', bg: 'var(--color-surface-sunken)' }
+}
+
 export function AdminDashboard() {
   const { user } = useAuth()
   const { employees, attendance, leaveRequests, activity, approveLeave, rejectLeave } = useData()
@@ -45,17 +75,21 @@ export function AdminDashboard() {
   const pendingCount = leaveRequests.filter((r) => r.status === 'Pending').length
   const pendingRequests = leaveRequests.filter((r) => r.status === 'Pending').slice(0, 4)
 
+  const approvedCount = leaveRequests.filter((r) => r.status === 'Approved').length
+  const rejectedCount = leaveRequests.filter((r) => r.status === 'Rejected').length
+  const totalForDistribution = approvedCount + pendingCount + rejectedCount || 1
+
   const leaveDistribution = [
-    { name: 'Approved', value: leaveRequests.filter((r) => r.status === 'Approved').length, color: 'var(--color-success)' },
-    { name: 'Pending', value: leaveRequests.filter((r) => r.status === 'Pending').length, color: 'var(--color-warning)' },
-    { name: 'Rejected', value: leaveRequests.filter((r) => r.status === 'Rejected').length, color: 'var(--color-danger)' },
+    { name: 'Approved', value: approvedCount, color: 'var(--color-info)' },
+    { name: 'Pending', value: pendingCount, color: 'var(--color-primary-soft)' },
+    { name: 'Rejected', value: rejectedCount, color: 'var(--color-danger)' },
   ]
 
   return (
     <div>
       <PageHeader
         title={`Good morning, ${user?.name.split(' ')[0]}.`}
-        description="People first. Performance next."
+        description="Here's what's happening across your workforce today."
         action={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" onClick={() => navigate('/employees')}>
@@ -70,10 +104,38 @@ export function AdminDashboard() {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard label="Total Employees" value={employees.length} icon={Users} tone="neutral" trend="Across 5 departments" />
-        <KpiCard label="Present Today" value={presentToday} icon={CalendarCheck} tone="success" trend={`${Math.round((presentToday / Math.max(employees.length, 1)) * 100)}% attendance`} />
-        <KpiCard label="On Leave" value={onLeaveToday} icon={CalendarClock} tone="info" trend="Today" />
-        <KpiCard label="Pending Requests" value={pendingCount} icon={Clock3} tone="warning" trend="Awaiting your review" />
+        <KpiCard
+          label="Total Employees"
+          value={employees.length}
+          icon={Users}
+          tone="neutral"
+          trend="Across 5 departments"
+          change={{ direction: 'up', value: '12%', label: 'vs last month' }}
+        />
+        <KpiCard
+          label="Present Today"
+          value={presentToday}
+          icon={CalendarCheck}
+          tone="success"
+          trend={`${Math.round((presentToday / Math.max(employees.length, 1)) * 100)}% attendance`}
+          change={{ direction: 'up', value: '8%', label: 'vs yesterday' }}
+        />
+        <KpiCard
+          label="On Leave"
+          value={onLeaveToday}
+          icon={CalendarClock}
+          tone="info"
+          trend="Today"
+          change={{ direction: 'down', value: '3%', label: 'vs yesterday' }}
+        />
+        <KpiCard
+          label="Pending Requests"
+          value={pendingCount}
+          icon={Clock3}
+          tone="warning"
+          trend="Awaiting your review"
+          change={{ direction: 'flat', value: '—', label: 'no change' }}
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -87,7 +149,7 @@ export function AdminDashboard() {
                   key={p}
                   onClick={() => setPeriod(p)}
                   className={`rounded-[5px] px-2.5 py-1 font-medium transition-colors ${
-                    period === p ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]' : 'text-[var(--color-ink-muted)]'
+                    period === p ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-ink-muted)]'
                   }`}
                 >
                   {p}
@@ -104,14 +166,14 @@ export function AdminDashboard() {
                   cursor={{ fill: 'var(--color-surface-sunken)' }}
                   contentStyle={{ borderRadius: 10, border: '1px solid var(--color-border)', fontSize: 13 }}
                 />
-                <Bar dataKey="present" stackId="a" fill="var(--color-success)" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="leave" stackId="a" fill="var(--color-info)" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="absent" stackId="a" fill="var(--color-danger)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="present" stackId="a" fill={CHART_COLORS.present} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="leave" stackId="a" fill={CHART_COLORS.leave} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="absent" stackId="a" fill={CHART_COLORS.absent} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
             <div className="mt-3 flex flex-wrap gap-4 text-xs text-[var(--color-ink-muted)]">
-              <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[var(--color-success)]" />Present</span>
-              <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[var(--color-info)]" />Leave</span>
+              <span className="flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ backgroundColor: CHART_COLORS.present }} />Present</span>
+              <span className="flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ backgroundColor: CHART_COLORS.leave }} />Leave</span>
               <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-[var(--color-danger)]" />Absent</span>
             </div>
           </CardContent>
@@ -140,7 +202,12 @@ export function AdminDashboard() {
                     <span className="size-2 rounded-full" style={{ backgroundColor: d.color }} />
                     {d.name}
                   </span>
-                  <span className="font-medium text-[var(--color-ink)]">{d.value}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-medium text-[var(--color-ink)]">{d.value}</span>
+                    <span className="text-xs text-[var(--color-ink-faint)]">
+                      ({Math.round((d.value / totalForDistribution) * 100)}%)
+                    </span>
+                  </span>
                 </div>
               ))}
             </div>
@@ -198,6 +265,13 @@ export function AdminDashboard() {
                       >
                         <XCircle className="size-3.5" /> Reject
                       </Button>
+                      <button
+                        onClick={() => navigate(`/leave?request=${r.id}`)}
+                        className="rounded-full p-1 text-[var(--color-ink-faint)] hover:bg-[var(--color-surface-sunken)] hover:text-[var(--color-ink-muted)]"
+                        aria-label="View request"
+                      >
+                        <ChevronRight className="size-4" />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -210,20 +284,31 @@ export function AdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/activity')}>
+              View all
+            </Button>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-4">
-              {activity.slice(0, 5).map((item) => (
-                <li key={item.id} className="flex gap-3 text-sm">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--color-primary)]" />
-                  <div>
-                    <p className="text-[var(--color-ink)]">{item.message}</p>
-                    <p className="text-xs text-[var(--color-ink-faint)]">
-                      {new Date(item.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
-                </li>
-              ))}
+            <ul className="space-y-3.5">
+              {activity.slice(0, 5).map((item) => {
+                const { icon: Icon, tone, bg } = activityVisual(item.message)
+                return (
+                  <li key={item.id} className="flex items-start gap-3 text-sm">
+                    <span
+                      className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
+                      style={{ backgroundColor: bg, color: tone }}
+                    >
+                      <Icon className="size-3.5" />
+                    </span>
+                    <div className="flex flex-1 items-center justify-between gap-2">
+                      <p className="text-[var(--color-ink)]">{item.message}</p>
+                      <p className="shrink-0 text-xs text-[var(--color-ink-faint)]">
+                        {new Date(item.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           </CardContent>
         </Card>
@@ -234,27 +319,41 @@ export function AdminDashboard() {
         <CardHeader>
           <CardTitle>Quick actions</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <QuickAction icon={UserPlus} label="Add employee" onClick={() => navigate('/employees')} />
-          <QuickAction icon={CalendarCheck} label="Mark attendance" onClick={() => navigate('/attendance')} />
-          <QuickAction icon={ClipboardCheck} label="Review leave" onClick={() => navigate('/leave')} />
-          <QuickAction icon={Wallet} label="Update payroll" onClick={() => navigate('/payroll')} />
+        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <QuickAction icon={UserPlus} label="Add employee" desc="Create new employee" onClick={() => navigate('/employees')} />
+          <QuickAction icon={CalendarCheck} label="View attendance" desc="Monitor workforce attendance" onClick={() => navigate('/attendance')} />
+          <QuickAction icon={ClipboardCheck} label="Review leaves" desc="Approve or reject requests" onClick={() => navigate('/leave')} />
+          <QuickAction icon={Wallet} label="Run payroll" desc="Process employee salaries" onClick={() => navigate('/payroll')} />
+          <QuickAction icon={BarChart3} label="View reports" desc="Analytics & insights" onClick={() => navigate('/reports')} />
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function QuickAction({ icon: Icon, label, onClick }: { icon: typeof UserPlus; label: string; onClick: () => void }) {
+function QuickAction({
+  icon: Icon,
+  label,
+  desc,
+  onClick,
+}: {
+  icon: typeof UserPlus
+  label: string
+  desc: string
+  onClick: () => void
+}) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-start gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border)] p-4 text-left transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]/40"
+      className="flex items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] p-3.5 text-left transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-sunken)]/40"
     >
-      <div className="flex size-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
         <Icon className="size-4" />
       </div>
-      <span className="text-[13px] font-medium text-[var(--color-ink)]">{label}</span>
+      <div>
+        <p className="text-[13px] font-medium text-[var(--color-ink)]">{label}</p>
+        <p className="text-[11px] leading-snug text-[var(--color-ink-faint)]">{desc}</p>
+      </div>
     </button>
   )
 }

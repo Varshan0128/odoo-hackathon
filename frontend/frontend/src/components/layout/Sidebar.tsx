@@ -1,48 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import {
-  LayoutGrid,
-  Users,
-  CalendarCheck,
-  CalendarClock,
-  Wallet,
-  BarChart3,
-  FolderOpen,
-  Building2,
-  ShieldCheck,
-  Settings,
-  X,
-} from 'lucide-react'
+import { LogOut, X, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth'
+import { getNavigationForRole } from '@/constants/navigation'
 
-const adminNav = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { to: '/employees', label: 'Employees', icon: Users },
-  { to: '/attendance', label: 'Attendance', icon: CalendarCheck },
-  { to: '/leave', label: 'Leave Management', icon: CalendarClock },
-  { to: '/payroll', label: 'Payroll', icon: Wallet },
-  { to: '/reports', label: 'Reports & Analytics', icon: BarChart3 },
-  { to: '/documents', label: 'Documents', icon: FolderOpen },
-]
-
-const adminManagementNav = [
-  { to: '/departments', label: 'Departments', icon: Building2 },
-  { to: '/roles', label: 'Roles & Permissions', icon: ShieldCheck },
-  { to: '/settings', label: 'Settings', icon: Settings },
-]
-
-const employeeNav = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { to: '/profile', label: 'My Profile', icon: Users },
-  { to: '/attendance', label: 'My Attendance', icon: CalendarCheck },
-  { to: '/leave', label: 'My Leave', icon: CalendarClock },
-  { to: '/payroll', label: 'My Payroll', icon: Wallet },
-  { to: '/documents', label: 'Documents', icon: FolderOpen },
-]
-
-const employeeSettingsNav = [{ to: '/settings', label: 'Settings', icon: Settings }]
-
-function NavItem({ to, label, icon: Icon }: { to: string; label: string; icon: typeof LayoutGrid }) {
+function NavItem({ to, label, icon: Icon }: { to: string; label: string; icon: LucideIcon }) {
   return (
     <NavLink
       to={to}
@@ -62,21 +24,22 @@ function NavItem({ to, label, icon: Icon }: { to: string; label: string; icon: t
 }
 
 export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; onCloseMobile: () => void }) {
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
-  const nav = isAdmin ? adminNav : employeeNav
-  const secondaryNav = isAdmin ? adminManagementNav : employeeSettingsNav
+  const { user, logout } = useAuth()
+  const sections = getNavigationForRole(user?.role)
 
   const content = (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 py-5">
-        <div className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary)] font-[var(--font-display)] text-sm font-semibold text-white">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary)] font-[var(--font-display)] text-sm font-semibold text-white">
             D
           </div>
-          <span className="font-[var(--font-display)] text-[17px] font-semibold tracking-tight text-[var(--color-ink)]">
-            Dayflow
-          </span>
+          <div className="leading-tight">
+            <p className="font-[var(--font-display)] text-[16px] font-semibold tracking-tight text-[var(--color-ink)]">
+              Dayflow
+            </p>
+            <p className="text-[11px] text-[var(--color-ink-faint)]">HR Management</p>
+          </div>
         </div>
         <button
           onClick={onCloseMobile}
@@ -88,21 +51,8 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
       </div>
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
-        <div className="space-y-0.5">
-          {nav.map((item) => (
-            <NavItem key={item.to} {...item} />
-          ))}
-        </div>
-        <div>
-          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">
-            {isAdmin ? 'Management' : 'Preferences'}
-          </p>
-          <div className="space-y-0.5">
-            {secondaryNav.map((item) => (
-              <NavItem key={item.to} {...item} />
-            ))}
-          </div>
-        </div>
+        {sections.map((section) => <div key={section.label}><p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{section.label}</p><div className="space-y-0.5">{section.items.map((item) => <NavItem key={item.to} {...item} />)}</div></div>)}
+        <div className="mt-auto border-t border-[var(--color-border)] pt-3"><button onClick={logout} className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sunken)]"><LogOut className="size-4" /> Logout</button></div>
       </nav>
     </div>
   )

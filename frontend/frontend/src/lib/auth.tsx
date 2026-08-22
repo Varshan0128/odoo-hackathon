@@ -21,7 +21,7 @@ interface AuthContextValue {
   user: User | null
   isAuthed: boolean
   signIn: (email: string, _password: string) => { ok: boolean; error?: string }
-  signUp: (input: { name: string; employeeId: string; email: string; role: Role }) => { ok: boolean; error?: string }
+  signUp: (input: { name: string; employeeId: string; email: string; role: Role; companyName?: string }) => { ok: boolean; error?: string }
   logout: () => void
 }
 
@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true }
   }
 
-  const signUp: AuthContextValue['signUp'] = ({ name, employeeId, email, role }) => {
+  const signUp: AuthContextValue['signUp'] = ({ name, employeeId, email, role, companyName }) => {
     if (employees.some((e) => e.email.toLowerCase() === email.toLowerCase())) {
       return { ok: false, error: 'An account with this email already exists.' }
     }
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       name,
       email,
       role,
-      department: 'Unassigned',
+      department: companyName || 'Unassigned',
       position: role === 'admin' ? 'HR' : 'New Hire',
       avatarColor: palette[Math.floor(Math.random() * palette.length)],
     }
