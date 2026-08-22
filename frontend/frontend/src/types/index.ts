@@ -11,7 +11,7 @@ export interface User {
   avatarColor: string
 }
 
-export type AttendanceStatus = 'present' | 'absent' | 'half-day' | 'leave'
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'half-day' | 'leave'
 
 export interface AttendanceRecord {
   id: string
@@ -20,9 +20,10 @@ export interface AttendanceRecord {
   status: AttendanceStatus
   checkIn?: string
   checkOut?: string
+  workingDuration?: string
 }
 
-export type LeaveType = 'Paid' | 'Sick' | 'Unpaid'
+export type LeaveType = string
 export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected'
 
 export interface LeaveRequest {
@@ -52,7 +53,14 @@ export interface SalaryStructure {
 
 export interface ActivityItem {
   id: string
-  type: 'leave_submitted' | 'leave_approved' | 'leave_rejected' | 'attendance' | 'employee_updated'
+  type:
+    | 'leave_submitted'
+    | 'leave_approved'
+    | 'leave_rejected'
+    | 'attendance'
+    | 'employee_updated'
+    | 'employee_created'
+    | 'payroll_updated'
   message: string
   timestamp: string
 }
@@ -64,4 +72,48 @@ export interface Employee extends User {
   phone: string
   address: string
   joinDate: string
+}
+
+export interface DocumentItem {
+  id: string
+  name: string
+  url: string
+  mimeType?: string | null
+  createdAt: string
+  employeeId?: string | null
+  fullName?: string | null
+}
+
+export interface AttendanceSeriesItem {
+  date: string
+  day: string
+  present: number
+  leave: number
+  absent: number
+}
+
+export interface AdminDashboardData {
+  metrics: {
+    totalEmployees: number
+    presentToday: number
+    onLeaveToday: number
+    pendingRequests: number
+  }
+  attendanceSeries: AttendanceSeriesItem[]
+  leaveDistribution: {
+    approved: number
+    pending: number
+    rejected: number
+  }
+  activity: ActivityItem[]
+}
+
+export interface EmployeeDashboardData {
+  todayAttendance: AttendanceRecord | null
+  leaveCounts: {
+    pending: number
+    approved: number
+    rejected: number
+  }
+  hasPayroll: boolean
 }

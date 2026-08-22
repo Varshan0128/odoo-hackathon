@@ -52,7 +52,7 @@ export function Sidebar({ mobileOpen, onCloseMobile }: { mobileOpen: boolean; on
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
         {sections.map((section) => <div key={section.label}><p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-faint)]">{section.label}</p><div className="space-y-0.5">{section.items.map((item) => <NavItem key={item.to} {...item} />)}</div></div>)}
-        <div className="mt-auto border-t border-[var(--color-border)] pt-3"><button onClick={logout} className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sunken)]"><LogOut className="size-4" /> Logout</button></div>
+        <div className="mt-auto border-t border-[var(--color-border)] pt-3"><button onClick={() => { void logout() }} className="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-3 py-2 text-[13.5px] font-medium text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-sunken)]"><LogOut className="size-4" /> Logout</button></div>
       </nav>
     </div>
   )

@@ -1,36 +1,22 @@
-/**
- * DEMO DATA STORE
- * ------------------------------------------------------------------
- * Frontend-only stand-in for the real backend (Phase "Backend API +
- * Database" of the build). It exposes the exact same shape of state
- * and actions a real API client would: reads return data, writes
- * mutate state and persist, and the whole app re-renders from a
- * single source of truth — so when the real API is wired in, only
- * the internals of these functions change (fetch calls instead of
- * array mutation), not the pages that consume them.
- *
- * Persists to localStorage under "dayflow:data" purely so a demo
- * doesn't reset on refresh. This is NOT a substitute for a database.
- * ------------------------------------------------------------------
- */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type {
-  Employee,
+  ActivityItem,
+  AdminDashboardData,
   AttendanceRecord,
+  DocumentItem,
+  Employee,
+  EmployeeDashboardData,
   LeaveRequest,
   SalaryStructure,
-  ActivityItem,
-  EmployeeStatus,
 } from '@/types'
-import {
-  seedEmployees,
-  seedAttendance,
-  seedLeaveRequests,
-  seedSalaries,
-  seedActivity,
-} from '@/data/seed'
-
-const STORAGE_KEY = 'dayflow:data'
+import { useAuth } from '@/lib/auth'
+import { employeeService, type CreateEmployeeInput } from '@/services/employee.service'
+import { attendanceService } from '@/services/attendance.service'
+import { leaveService, type ApplyLeaveInput } from '@/services/leave.service'
+import { payrollService, type PayrollInput } from '@/services/payroll.service'
+import { activityService } from '@/services/activity.service'
+import { documentService } from '@/services/document.service'
+import { dashboardService, type DashboardPeriod } from '@/services/dashboard.service'
 
 interface DataShape {
   employees: Employee[]
@@ -38,190 +24,235 @@ interface DataShape {
   leaveRequests: LeaveRequest[]
   salaries: SalaryStructure[]
   activity: ActivityItem[]
+  documents: DocumentItem[]
+  dashboard: AdminDashboardData | null
+  employeeDashboard: EmployeeDashboardData | null
 }
 
-function loadInitial(): DataShape {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch {
-    /* fall through to seed */
-  }
-  return {
-    employees: seedEmployees,
-    attendance: seedAttendance,
-    leaveRequests: seedLeaveRequests,
-    salaries: seedSalaries,
-    activity: seedActivity,
-  }
+const emptyData: DataShape = {
+  employees: [],
+  attendance: [],
+  leaveRequests: [],
+  salaries: [],
+  activity: [],
+  documents: [],
+  dashboard: null,
+  employeeDashboard: null,
 }
 
 interface DataContextValue extends DataShape {
-  addEmployee: (e: Omit<Employee, 'id'>) => void
-  updateEmployee: (employeeId: string, patch: Partial<Employee>) => void
-  checkIn: (employeeId: string) => void
-  checkOut: (employeeId: string) => void
-  applyLeave: (req: Omit<LeaveRequest, 'id' | 'status' | 'appliedOn' | 'days'>) => void
-  approveLeave: (id: string, comment?: string) => void
-  rejectLeave: (id: string, comment?: string) => void
-  updateSalary: (employeeId: string, patch: Partial<SalaryStructure>) => void
+  loading: boolean
+  error: string | null
+  refresh: () => Promise<void>
+  reloadDashboard: (period: DashboardPeriod) => Promise<void>
+  addEmployee: (input: CreateEmployeeInput) => Promise<Employee>
+  updateEmployee: (employeeId: string, patch: Partial<Employee>) => Promise<Employee>
+  checkIn: () => Promise<AttendanceRecord>
+  checkOut: () => Promise<AttendanceRecord>
+  applyLeave: (input: ApplyLeaveInput) => Promise<LeaveRequest>
+  approveLeave: (id: string, comment?: string) => Promise<LeaveRequest>
+  rejectLeave: (id: string, comment?: string) => Promise<LeaveRequest>
+  updateSalary: (employeeId: string, input: PayrollInput) => Promise<SalaryStructure>
   todayAttendanceFor: (employeeId: string) => AttendanceRecord | undefined
   weeklyAttendanceFor: (employeeId: string) => AttendanceRecord[]
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
 
-const todayIso = () => new Date().toISOString().slice(0, 10)
+function dateInIndia() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .formatToParts(new Date())
+    .reduce<Record<string, string>>((result, part) => {
+      if (part.type !== 'literal') result[part.type] = part.value
+      return result
+    }, {})
+  return parts.year + '-' + parts.month + '-' + parts.day
+}
 
-function pushActivity(list: ActivityItem[], item: Omit<ActivityItem, 'id' | 'timestamp'>) {
-  const entry: ActivityItem = {
-    ...item,
-    id: `ac${Date.now()}`,
-    timestamp: new Date().toISOString(),
-  }
-  return [entry, ...list].slice(0, 20)
+function addDays(date: string, amount: number) {
+  const values = date.split('-').map(Number)
+  const next = new Date(Date.UTC(values[0], values[1] - 1, values[2] + amount))
+  return next.toISOString().slice(0, 10)
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unable to load data. Please try again.'
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<DataShape>(loadInitial)
+  const { user, isRestoring } = useAuth()
+  const [data, setData] = useState<DataShape>(emptyData)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    if (!user) {
+      setData(emptyData)
+      setLoading(false)
+      setError(null)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    const today = dateInIndia()
+    try {
+      const results = await Promise.all([
+        user.role === 'admin' ? employeeService.list() : employeeService.get(user.employeeId).then((employee) => [employee]),
+        attendanceService.list({ startDate: addDays(today, -90), endDate: today }),
+        leaveService.list(),
+        payrollService.list(),
+        activityService.list(),
+        documentService.list(),
+        user.role === 'admin' ? dashboardService.getAdmin() : dashboardService.getEmployee(),
+      ])
+      setData({
+        employees: results[0],
+        attendance: results[1],
+        leaveRequests: results[2],
+        salaries: results[3],
+        activity: results[4],
+        documents: results[5],
+        dashboard: user.role === 'admin' ? (results[6] as AdminDashboardData) : null,
+        employeeDashboard: user.role === 'employee' ? (results[6] as EmployeeDashboardData) : null,
+      })
+    } catch (requestError) {
+      setData(emptyData)
+      setError(errorMessage(requestError))
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [state])
+    if (!isRestoring) void refresh()
+  }, [isRestoring, refresh])
 
-  const value = useMemo<DataContextValue>(() => ({
-    ...state,
+  const reloadDashboard = useCallback(
+    async (period: DashboardPeriod) => {
+      if (!user || user.role !== 'admin') return
+      const dashboard = await dashboardService.getAdmin(period)
+      setData((previous) => ({ ...previous, dashboard }))
+    },
+    [user],
+  )
 
-    addEmployee: (e) =>
-      setState((s) => ({
-        ...s,
-        employees: [...s.employees, { ...e, id: `u${Date.now()}` }],
-        activity: pushActivity(s.activity, {
-          type: 'employee_updated',
-          message: `${e.name} was added to the organization`,
-        }),
-      })),
+  const addEmployee = useCallback(
+    async (input: CreateEmployeeInput) => {
+      const employee = await employeeService.create(input)
+      await refresh()
+      return employee
+    },
+    [refresh],
+  )
 
-    updateEmployee: (employeeId, patch) =>
-      setState((s) => ({
-        ...s,
-        employees: s.employees.map((emp) =>
-          emp.employeeId === employeeId ? { ...emp, ...patch } : emp
-        ),
-        activity: pushActivity(s.activity, {
-          type: 'employee_updated',
-          message: `${patch.name ?? employeeId}'s profile was updated`,
-        }),
-      })),
+  const updateEmployee = useCallback(
+    async (employeeId: string, patch: Partial<Employee>) => {
+      const employee = await employeeService.update(employeeId, patch)
+      await refresh()
+      return employee
+    },
+    [refresh],
+  )
 
-    checkIn: (employeeId) =>
-      setState((s) => {
-        const date = todayIso()
-        const existing = s.attendance.find(
-          (r) => r.employeeId === employeeId && r.date === date
-        )
-        const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-        const attendance = existing
-          ? s.attendance.map((r) => (r === existing ? { ...r, checkIn: time, status: 'present' as const } : r))
-          : [...s.attendance, { id: `a${Date.now()}`, employeeId, date, status: 'present' as const, checkIn: time }]
-        return {
-          ...s,
-          attendance,
-          activity: pushActivity(s.activity, { type: 'attendance', message: `${employeeId} checked in at ${time}` }),
-        }
-      }),
+  const checkIn = useCallback(async () => {
+    const record = await attendanceService.checkIn()
+    await refresh()
+    return record
+  }, [refresh])
 
-    checkOut: (employeeId) =>
-      setState((s) => {
-        const date = todayIso()
-        const time = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-        return {
-          ...s,
-          attendance: s.attendance.map((r) =>
-            r.employeeId === employeeId && r.date === date ? { ...r, checkOut: time } : r
-          ),
-          activity: pushActivity(s.activity, { type: 'attendance', message: `${employeeId} checked out at ${time}` }),
-        }
-      }),
+  const checkOut = useCallback(async () => {
+    const record = await attendanceService.checkOut()
+    await refresh()
+    return record
+  }, [refresh])
 
-    applyLeave: (req) =>
-      setState((s) => {
-        const start = new Date(req.startDate)
-        const end = new Date(req.endDate)
-        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
-        const entry: LeaveRequest = {
-          ...req,
-          id: `l${Date.now()}`,
-          status: 'Pending',
-          appliedOn: todayIso(),
-          days,
-        }
-        return {
-          ...s,
-          leaveRequests: [entry, ...s.leaveRequests],
-          activity: pushActivity(s.activity, {
-            type: 'leave_submitted',
-            message: `${req.employeeName} submitted a ${req.type} leave request`,
-          }),
-        }
-      }),
+  const applyLeave = useCallback(
+    async (input: ApplyLeaveInput) => {
+      const leave = await leaveService.apply(input)
+      await refresh()
+      return leave
+    },
+    [refresh],
+  )
 
-    approveLeave: (id, comment) =>
-      setState((s) => {
-        const req = s.leaveRequests.find((r) => r.id === id)
-        return {
-          ...s,
-          leaveRequests: s.leaveRequests.map((r) =>
-            r.id === id ? { ...r, status: 'Approved' as const, comment } : r
-          ),
-          activity: req
-            ? pushActivity(s.activity, { type: 'leave_approved', message: `${req.employeeName}'s leave request was approved` })
-            : s.activity,
-        }
-      }),
+  const approveLeave = useCallback(
+    async (id: string, comment?: string) => {
+      const leave = await leaveService.decide(id, 'Approved', comment)
+      await refresh()
+      return leave
+    },
+    [refresh],
+  )
 
-    rejectLeave: (id, comment) =>
-      setState((s) => {
-        const req = s.leaveRequests.find((r) => r.id === id)
-        return {
-          ...s,
-          leaveRequests: s.leaveRequests.map((r) =>
-            r.id === id ? { ...r, status: 'Rejected' as const, comment } : r
-          ),
-          activity: req
-            ? pushActivity(s.activity, { type: 'leave_rejected', message: `${req.employeeName}'s leave request was rejected` } as any)
-            : s.activity,
-        }
-      }),
+  const rejectLeave = useCallback(
+    async (id: string, comment?: string) => {
+      const leave = await leaveService.decide(id, 'Rejected', comment)
+      await refresh()
+      return leave
+    },
+    [refresh],
+  )
 
-    updateSalary: (employeeId, patch) =>
-      setState((s) => ({
-        ...s,
-        salaries: s.salaries.map((sal) => {
-          if (sal.employeeId !== employeeId) return sal
-          const next = { ...sal, ...patch }
-          next.netSalary = next.basic + next.hra + next.allowances - next.deductions
-          return next
-        }),
-      })),
+  const updateSalary = useCallback(
+    async (employeeId: string, input: PayrollInput) => {
+      const salary = await payrollService.save(employeeId, input)
+      await refresh()
+      return salary
+    },
+    [refresh],
+  )
 
-    todayAttendanceFor: (employeeId) =>
-      state.attendance.find((r) => r.employeeId === employeeId && r.date === todayIso()),
-
-    weeklyAttendanceFor: (employeeId) =>
-      state.attendance
-        .filter((r) => r.employeeId === employeeId)
-        .sort((a, b) => (a.date < b.date ? 1 : -1))
-        .slice(0, 7),
-  }), [state])
+  const value = useMemo<DataContextValue>(
+    () => ({
+      ...data,
+      loading,
+      error,
+      refresh,
+      reloadDashboard,
+      addEmployee,
+      updateEmployee,
+      checkIn,
+      checkOut,
+      applyLeave,
+      approveLeave,
+      rejectLeave,
+      updateSalary,
+      todayAttendanceFor: (employeeId) =>
+        data.attendance.find((record) => record.employeeId === employeeId && record.date === dateInIndia()),
+      weeklyAttendanceFor: (employeeId) =>
+        data.attendance
+          .filter((record) => record.employeeId === employeeId)
+          .sort((left, right) => right.date.localeCompare(left.date))
+          .slice(0, 7),
+    }),
+    [
+      addEmployee,
+      applyLeave,
+      approveLeave,
+      checkIn,
+      checkOut,
+      data,
+      error,
+      loading,
+      refresh,
+      rejectLeave,
+      reloadDashboard,
+      updateEmployee,
+      updateSalary,
+    ],
+  )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>
 }
 
 export function useData() {
-  const ctx = useContext(DataContext)
-  if (!ctx) throw new Error('useData must be used within DataProvider')
-  return ctx
+  const context = useContext(DataContext)
+  if (!context) throw new Error('useData must be used within DataProvider')
+  return context
 }
-
-export type { EmployeeStatus }

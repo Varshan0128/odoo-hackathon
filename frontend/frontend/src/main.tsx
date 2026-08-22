@@ -8,6 +8,6 @@ import { AppRoutes } from '@/routes/AppRoutes'
 import './styles/globals.css'
 import './styles/theme.css'
 
-function App() { return <DataProvider><AuthProvider><ToastProvider><AppRoutes /></ToastProvider></AuthProvider></DataProvider> }
+function App() { return <AuthProvider><DataProvider><ToastProvider><AppRoutes /></ToastProvider></DataProvider></AuthProvider> }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><BrowserRouter><App /></BrowserRouter></StrictMode>)

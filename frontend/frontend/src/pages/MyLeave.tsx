@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardContent } from '@/components/ui/Card'
@@ -13,23 +13,31 @@ import { useAuth } from '@/lib/auth'
 import { useData } from '@/lib/store'
 import { useToast } from '@/components/ui/Toast'
 import { formatDate } from '@/lib/utils'
-import type { LeaveType } from '@/types'
-
-const leaveTypes: LeaveType[] = ['Paid', 'Sick', 'Unpaid']
+import { SkeletonTable } from '@/components/ui/Skeleton'
+import { leaveService, type LeaveTypeOption } from '@/services/leave.service'
 
 export function MyLeave() {
   const { user } = useAuth()
-  const { leaveRequests, applyLeave } = useData()
+  const { leaveRequests, applyLeave, loading: dataLoading, error: dataError } = useData()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ type: 'Paid' as LeaveType, startDate: '', endDate: '', remarks: '' })
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([])
+  const [form, setForm] = useState({ type: '', startDate: '', endDate: '', remarks: '' })
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    void leaveService.types().then((types) => {
+      setLeaveTypes(types)
+      setForm((previous) => ({ ...previous, type: previous.type || types[0]?.name || '' }))
+    }).catch((requestError) => setError(requestError instanceof Error ? requestError.message : 'Unable to load leave types.'))
+  }, [])
 
   if (!user) return null
 
   const mine = leaveRequests.filter((r) => r.employeeId === user.employeeId).sort((a, b) => (a.appliedOn < b.appliedOn ? 1 : -1))
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.startDate || !form.endDate) {
       setError('Choose a start and end date.')
       return
@@ -38,19 +46,27 @@ export function MyLeave() {
       setError('End date cannot be before the start date.')
       return
     }
-    applyLeave({
-      employeeId: user.employeeId,
-      employeeName: user.name,
-      department: user.department,
-      type: form.type,
-      startDate: form.startDate,
-      endDate: form.endDate,
-      remarks: form.remarks,
-    })
-    toast('Leave request submitted for review.')
-    setOpen(false)
-    setForm({ type: 'Paid', startDate: '', endDate: '', remarks: '' })
-    setError('')
+    if (!form.remarks.trim()) {
+      setError('Add a reason for your leave request.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await applyLeave({
+        type: form.type,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        remarks: form.remarks,
+      })
+      toast('Leave request submitted for review.')
+      setOpen(false)
+      setForm({ type: leaveTypes[0]?.name || '', startDate: '', endDate: '', remarks: '' })
+      setError('')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Unable to submit your leave request.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -67,7 +83,11 @@ export function MyLeave() {
 
       <Card>
         <CardContent className="pt-5">
-          {mine.length === 0 ? (
+          {dataLoading ? (
+            <SkeletonTable rows={4} />
+          ) : dataError ? (
+            <EmptyState title="Unable to load leave requests" description={dataError} action={<Button size="sm" onClick={() => { void location.reload() }}>Retry</Button>} />
+          ) : mine.length === 0 ? (
             <EmptyState
               title="No leave requests yet"
               description="Apply for leave and it will show up here with its status."
@@ -122,15 +142,15 @@ export function MyLeave() {
             <Button variant="secondary" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={submit}>Submit request</Button>
+            <Button onClick={() => { void submit() }} loading={submitting}>Submit request</Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Select label="Leave type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as LeaveType })}>
+          <Select label="Leave type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
             {leaveTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
+              <option key={t.id} value={t.name}>
+                {t.name}
               </option>
             ))}
           </Select>
@@ -144,7 +164,7 @@ export function MyLeave() {
             <Input label="End date" type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[13px] font-medium text-[var(--color-ink)]">Remarks (optional)</label>
+            <label className="text-[13px] font-medium text-[var(--color-ink)]">Reason</label>
             <textarea
               value={form.remarks}
               onChange={(e) => setForm({ ...form, remarks: e.target.value })}

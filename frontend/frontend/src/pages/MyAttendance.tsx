@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { LogIn, LogOut as LogOutIcon } from 'lucide-react'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -10,9 +11,11 @@ import { useData } from '@/lib/store'
 import { useToast } from '@/components/ui/Toast'
 import { formatDate } from '@/lib/utils'
 import type { AttendanceStatus } from '@/types'
+import { SkeletonTable } from '@/components/ui/Skeleton'
 
 const statusConfig: Record<AttendanceStatus, { tone: 'success' | 'danger' | 'warning' | 'info'; label: string }> = {
   present: { tone: 'success', label: 'Present' },
+  late: { tone: 'warning', label: 'Late' },
   absent: { tone: 'danger', label: 'Absent' },
   'half-day': { tone: 'warning', label: 'Half-day' },
   leave: { tone: 'info', label: 'Leave' },
@@ -20,13 +23,31 @@ const statusConfig: Record<AttendanceStatus, { tone: 'success' | 'danger' | 'war
 
 export function MyAttendance() {
   const { user } = useAuth()
-  const { checkIn, checkOut, todayAttendanceFor, weeklyAttendanceFor } = useData()
+  const { checkIn, checkOut, todayAttendanceFor, weeklyAttendanceFor, loading, error } = useData()
   const { toast } = useToast()
+  const [busy, setBusy] = useState(false)
 
   if (!user) return null
 
   const today = todayAttendanceFor(user.employeeId)
   const weekly = weeklyAttendanceFor(user.employeeId)
+
+  const updateAttendance = async (action: 'in' | 'out') => {
+    setBusy(true)
+    try {
+      if (action === 'in') {
+        await checkIn()
+        toast('Checked in for today.')
+      } else {
+        await checkOut()
+        toast('Checked out. See you tomorrow.')
+      }
+    } catch (requestError) {
+      toast(requestError instanceof Error ? requestError.message : 'Unable to update attendance.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div>
@@ -48,20 +69,16 @@ export function MyAttendance() {
           </div>
           {!today?.checkIn ? (
             <Button
-              onClick={() => {
-                checkIn(user.employeeId)
-                toast('Checked in for today.')
-              }}
+              onClick={() => { void updateAttendance('in') }}
+              loading={busy}
             >
               <LogIn className="size-4" /> Check in
             </Button>
           ) : !today?.checkOut ? (
             <Button
               variant="secondary"
-              onClick={() => {
-                checkOut(user.employeeId)
-                toast('Checked out. See you tomorrow.')
-              }}
+              onClick={() => { void updateAttendance('out') }}
+              loading={busy}
             >
               <LogOutIcon className="size-4" /> Check out
             </Button>
@@ -76,7 +93,11 @@ export function MyAttendance() {
           <CardTitle>This week</CardTitle>
         </CardHeader>
         <CardContent>
-          {weekly.length === 0 ? (
+          {loading ? (
+            <SkeletonTable rows={5} />
+          ) : error ? (
+            <EmptyState title="Unable to load attendance" description={error} />
+          ) : weekly.length === 0 ? (
             <EmptyState title="No records yet" description="Your attendance history will appear here." />
           ) : (
             <Table>
@@ -86,6 +107,7 @@ export function MyAttendance() {
                   <Th>Status</Th>
                   <Th>Check in</Th>
                   <Th>Check out</Th>
+                  <Th>Duration</Th>
                 </tr>
               </Thead>
               <tbody>
@@ -99,6 +121,7 @@ export function MyAttendance() {
                       </Td>
                       <Td className="text-[var(--color-ink-muted)]">{r.checkIn ?? '—'}</Td>
                       <Td className="text-[var(--color-ink-muted)]">{r.checkOut ?? '—'}</Td>
+                      <Td className="text-[var(--color-ink-muted)]">{r.workingDuration ?? '—'}</Td>
                     </Tr>
                   )
                 })}

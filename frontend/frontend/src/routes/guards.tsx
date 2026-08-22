@@ -10,7 +10,10 @@ import { useAuth } from '@/lib/auth'
  */
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { isAuthed } = useAuth()
+  const { isAuthed, isRestoring } = useAuth()
+  if (isRestoring) {
+    return <div className="flex min-h-screen items-center justify-center bg-[var(--color-ivory)] text-sm text-[var(--color-ink-muted)]">Restoring your secure session…</div>
+  }
   if (!isAuthed) return <Navigate to="/signin" replace />
   return <>{children}</>
 }
@@ -28,7 +31,10 @@ export function RequireEmployee({ children }: { children: ReactNode }) {
 }
 
 export function RedirectIfAuthed({ children }: { children: ReactNode }) {
-  const { isAuthed } = useAuth()
+  const { isAuthed, isRestoring } = useAuth()
+  if (isRestoring) {
+    return <div className="flex min-h-screen items-center justify-center bg-[#FBF7F2] text-sm text-[#8A7F74]">Loading Dayflow…</div>
+  }
   if (isAuthed) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Mail, Phone, MapPin, Calendar, Pencil } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -33,17 +33,32 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
   const { employeeId: routeEmployeeId } = useParams()
   const employeeId = forceEmployeeId ?? routeEmployeeId
   const navigate = useNavigate()
-  const { employees, attendance, leaveRequests, salaries, updateEmployee } = useData()
+  const { employees, attendance, leaveRequests, salaries, documents, updateEmployee, loading, error } = useData()
   const { user } = useAuth()
   const { toast } = useToast()
   const [tab, setTab] = useState('overview')
   const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const employee = employees.find((e) => e.employeeId === employeeId)
   const isSelf = user?.employeeId === employeeId
   const canEditAll = user?.role === 'admin'
 
   const [form, setForm] = useState({ phone: employee?.phone ?? '', address: employee?.address ?? '' })
+
+  useEffect(() => {
+    if (employee && !editing) {
+      setForm({ phone: employee.phone, address: employee.address })
+    }
+  }, [editing, employee])
+
+  if (loading && !employee) {
+    return <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-6 text-sm text-[var(--color-ink-muted)]">Loading employee profile…</div>
+  }
+
+  if (error && !employee) {
+    return <EmptyState title="Unable to load employee profile" description={error} />
+  }
 
   if (!employee) {
     return (
@@ -62,7 +77,21 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
   const myAttendance = attendance.filter((a) => a.employeeId === employee.employeeId).sort((a, b) => (a.date < b.date ? 1 : -1))
   const myLeave = leaveRequests.filter((r) => r.employeeId === employee.employeeId)
   const mySalary = salaries.find((s) => s.employeeId === employee.employeeId)
+  const myDocuments = documents.filter((document) => !document.employeeId || document.employeeId === employee.employeeId)
   const canEditContact = canEditAll || isSelf
+
+  const saveContact = async () => {
+    setSaving(true)
+    try {
+      await updateEmployee(employee.employeeId, { phone: form.phone, address: form.address })
+      toast('Profile updated.')
+      setEditing(false)
+    } catch (requestError) {
+      toast(requestError instanceof Error ? requestError.message : 'Unable to update the profile.', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div>
@@ -90,17 +119,7 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
             </div>
           </div>
           {canEditContact && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                if (editing) {
-                  updateEmployee(employee.employeeId, { phone: form.phone, address: form.address })
-                  toast('Profile updated.')
-                }
-                setEditing((v) => !v)
-              }}
-            >
+            <Button variant="secondary" size="sm" loading={saving} onClick={() => { if (editing) { void saveContact() } else { setEditing(true) } }}>
               <Pencil className="size-3.5" /> {editing ? 'Save changes' : 'Edit contact info'}
             </Button>
           )}
@@ -147,7 +166,7 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
       {tab === 'attendance' && (
         <Card>
           <CardContent className="pt-5">
-            {myAttendance.length === 0 ? (
+            {loading ? <p className="text-sm text-[var(--color-ink-muted)]">Loading attendance…</p> : error ? <EmptyState title="Unable to load attendance" description={error} /> : myAttendance.length === 0 ? (
               <EmptyState title="No attendance recorded" description="Records will appear once check-ins begin." />
             ) : (
               <Table>
@@ -157,6 +176,7 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
                     <Th>Status</Th>
                     <Th>Check in</Th>
                     <Th>Check out</Th>
+                    <Th>Duration</Th>
                   </tr>
                 </Thead>
                 <tbody>
@@ -168,6 +188,7 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
                       </Td>
                       <Td className="text-[var(--color-ink-muted)]">{a.checkIn ?? '—'}</Td>
                       <Td className="text-[var(--color-ink-muted)]">{a.checkOut ?? '—'}</Td>
+                      <Td className="text-[var(--color-ink-muted)]">{a.workingDuration ?? '—'}</Td>
                     </Tr>
                   ))}
                 </tbody>
@@ -180,7 +201,7 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
       {tab === 'leave' && (
         <Card>
           <CardContent className="pt-5">
-            {myLeave.length === 0 ? (
+            {loading ? <p className="text-sm text-[var(--color-ink-muted)]">Loading leave history…</p> : error ? <EmptyState title="Unable to load leave history" description={error} /> : myLeave.length === 0 ? (
               <EmptyState title="No leave requests" description="This employee hasn't applied for leave yet." />
             ) : (
               <Table>
@@ -217,7 +238,7 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
       {tab === 'payroll' && (
         <Card>
           <CardContent className="pt-5">
-            {!mySalary ? (
+            {loading ? <p className="text-sm text-[var(--color-ink-muted)]">Loading payroll…</p> : error ? <EmptyState title="Unable to load payroll" description={error} /> : !mySalary ? (
               <EmptyState title="Payroll not configured" description="Set up a salary structure for this employee." />
             ) : (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -242,7 +263,13 @@ export function EmployeeProfile({ forceEmployeeId }: { forceEmployeeId?: string 
       {tab === 'documents' && (
         <Card>
           <CardContent className="pt-5">
-            <EmptyState title="No documents uploaded" description="Offer letters, ID proofs, and policies will appear here." />
+            {loading ? <p className="text-sm text-[var(--color-ink-muted)]">Loading documents…</p> : error ? <EmptyState title="Unable to load documents" description={error} /> : myDocuments.length === 0 ? (
+              <EmptyState title="No documents uploaded" description="Documents shared with this employee will appear here." />
+            ) : (
+              <div className="space-y-2">
+                {myDocuments.map((document) => <a key={document.id} href={document.url} className="block rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-primary)] hover:bg-[var(--color-surface-sunken)]">{document.name}</a>)}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -274,9 +301,10 @@ function SalaryStat({ label, value, negative }: { label: string; value: number; 
   )
 }
 
-function AttendanceBadge({ status }: { status: 'present' | 'absent' | 'half-day' | 'leave' }) {
+function AttendanceBadge({ status }: { status: 'present' | 'late' | 'absent' | 'half-day' | 'leave' }) {
   const map = {
     present: { tone: 'success' as const, label: 'Present' },
+    late: { tone: 'warning' as const, label: 'Late' },
     absent: { tone: 'danger' as const, label: 'Absent' },
     'half-day': { tone: 'warning' as const, label: 'Half-day' },
     leave: { tone: 'info' as const, label: 'Leave' },
